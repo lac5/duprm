@@ -39,7 +39,6 @@ mod remove_tags;
 use glob::glob;
 use md5::Digest;
 use remove_tags::remove_tags_from_buffer;
-use std::error::Error;
 use std::fs;
 use std::fs::File;
 use std::io::prelude::*;
@@ -57,9 +56,9 @@ fn main() {
 
     for entry in glob("**/*.mp3").unwrap() {
         let path = try_or_continue!(entry);
-        let mut f = File::open(path.clone())?;
+        let mut f = try_or_continue!(File::open(path.clone()));
         let mut buffer = Vec::new();
-        f.read_to_end(&mut buffer)?;
+        try_or_continue!(f.read_to_end(&mut buffer));
         let buffer = some_or_continue!(remove_tags_from_buffer(buffer));
         let md5 = md5::compute(buffer);
         let metadata = try_or_continue!(fs::metadata(path.clone()));
