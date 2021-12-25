@@ -52,10 +52,10 @@ struct Row {
     path: PathBuf,
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() {
     let mut found: Vec<Row> = vec![];
 
-    for entry in glob("**/*.mp3")? {
+    for entry in glob("**/*.mp3").unwrap() {
         let path = try_or_continue!(entry);
         let mut f = File::open(path.clone())?;
         let mut buffer = Vec::new();
@@ -65,15 +65,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         let metadata = try_or_continue!(fs::metadata(path.clone()));
         let time = try_or_continue!(metadata.created());
 
+        println!("{:x} {}", md5, path.display());
+
         let row1 = Row { time, md5, path };
         let mut deleted = false;
         for (i, row2) in found.iter().enumerate() {
             if row1.md5 == row2.md5 {
-                // if file1 is newer than file2:
+                println!("match ({:x}):", row1.md5);
                 if row1.time > row2.time {
+                    println!("trash#2 -> {}", row2.path.display());
                     try_or_log!(trash::delete(row2.path.clone()));
                     found.remove(i);
                 } else {
+                    println!("trash#1 -> {}", row1.path.display());
                     try_or_log!(trash::delete(row1.path.clone()));
                     deleted = true;
                 }
@@ -84,6 +88,4 @@ fn main() -> Result<(), Box<dyn Error>> {
             found.push(row1);
         }
     }
-
-    Ok(())
 }
