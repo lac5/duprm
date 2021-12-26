@@ -27,27 +27,34 @@ fn main() {
         let md5_map = Arc::clone(&md5_map);
         let tx = tx.clone();
         pool.execute(move || {
-            let (md5, time, path) = make_row(entry).unwrap();
-            let mut md5_map = md5_map.lock().unwrap();
-            println!("{}. {:x} {}", index, md5.yellow(), path.display().green());
-            if let Some((time2, path2)) = md5_map.get(&md5) {
-                println!("{}. match ({:x}):", index, md5.yellow());
-                if time > *time2 {
-                    println!("{}. trash -> {}", index, path2.display().blue());
-                    if let Err(e) = trash::delete(path2.clone()) {
-                        eprintln!("{}. {}{:?}", index, "ERR: ".red(), e);
+            if let Err(e) = (|| -> Result<(), Box<dyn Error>> {
+                let (md5, time, path) = make_row(entry)?;
+                let mut md5_map = md5_map.lock()?;
+                println!("{}. {:x} {}", index, md5.yellow(), path.display().green());
+                if let Some((time2, path2)) = md5_map.get(&md5) {
+                    println!("{}. match ({:x}):", index, md5.yellow());
+                    if time > *time2 {
+                        println!("{}. trash -> {}", index, path2.display().blue());
+                        if let Err(e) = trash::delete(path2.clone()) {
+                            eprintln!("{}. {}{:?}", index, "ERR: ".red(), e);
+                        }
+                        md5_map.insert(md5, (time, path));
+                    } else {
+                        println!("{} trash -> {}", index, path.display().green());
+                        if let Err(e) = trash::delete(path.clone()) {
+                            eprintln!("{} {}{:?}", index, "ERR: ".red(), e);
+                        }
                     }
-                    md5_map.insert(md5, (time, path));
                 } else {
-                    println!("{} trash -> {}", index, path.display().green());
-                    if let Err(e) = trash::delete(path.clone()) {
-                        eprintln!("{} {}{:?}", index, "ERR: ".red(), e);
-                    }
+                    md5_map.insert(md5, (time, path));
                 }
-            } else {
-                md5_map.insert(md5, (time, path));
+                Ok(())
+            })() {
+                eprintln!("{} {}{:?}", index, "ERR: ".red(), e);
             }
-            tx.send(1).unwrap();
+            if let Err(e) = tx.send(1) {
+                eprintln!("{} {}{:?}", index, "ERR: ".red(), e);
+            }
         });
     }
 
