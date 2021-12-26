@@ -23,29 +23,25 @@ fn main() {
 
     for entry in glob("**/*.mp3").unwrap() {
         found += 1;
+        let index = found.clone();
         let md5_map = Arc::clone(&md5_map);
         let tx = tx.clone();
         pool.execute(move || {
             let (md5, time, path) = make_row(entry).unwrap();
             let mut md5_map = md5_map.lock().unwrap();
-            println!(
-                "{} {:x} {}",
-                md5_map.len(),
-                md5.yellow(),
-                path.display().green()
-            );
+            println!("{}. {:x} {}", index, md5.yellow(), path.display().green());
             if let Some((time2, path2)) = md5_map.get(&md5) {
-                println!("match ({:x}):", md5.yellow());
+                println!("{}. match ({:x}):", index, md5.yellow());
                 if time > *time2 {
-                    println!("trash -> {}", path2.display().blue());
+                    println!("{}. trash -> {}", index, path2.display().blue());
                     if let Err(e) = trash::delete(path2.clone()) {
-                        eprintln!("{}{:?}", "ERR: ".red(), e);
+                        eprintln!("{}. {}{:?}", index, "ERR: ".red(), e);
                     }
                     md5_map.insert(md5, (time, path));
                 } else {
-                    println!("trash -> {}", path.display().green());
+                    println!("{} trash -> {}", index, path.display().green());
                     if let Err(e) = trash::delete(path.clone()) {
-                        eprintln!("{}{:?}", "ERR: ".red(), e);
+                        eprintln!("{} {}{:?}", index, "ERR: ".red(), e);
                     }
                 }
             } else {
@@ -55,7 +51,7 @@ fn main() {
         });
     }
 
-    println!("{}", rx.iter().take(found).fold(0, |a, b| a + b));
+    println!("...{}", rx.iter().take(found).fold(0, |a, b| a + b));
     println!("done");
 }
 
