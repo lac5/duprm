@@ -13,6 +13,7 @@ owo-colors = "3"
 futures = "0.3.19"
 clap = "2.34.0"
 futures-polling = "0.1.1"
+num-integer = "0.1.44"
 
 [dependencies.async-std]
 version = "1.7.0"
