@@ -21,10 +21,13 @@ macro_rules! etry {
 mod remove_tags;
 
 use async_std::fs;
+use async_std::fs::remove_file;
 use async_std::fs::Metadata;
+use clap::App;
 use futures::executor::block_on;
 use futures::future::join_all;
 use futures::join;
+use futures_polling::{FuturePollingExt, Polling};
 use glob::glob;
 use glob::GlobResult;
 use md5::Digest;
@@ -48,6 +51,11 @@ type Data = (Digest, SystemTime, PathBuf);
 type Md5Map = HashMap<Digest, (SystemTime, PathBuf)>;
 
 fn main() {
+    let _ = App::new("duprm")
+        .version("1.0")
+        .about("Removes duplicate MP3 files.")
+        .get_matches();
+
     println!("searching for mp3 files");
     let results: Vec<GlobResult> = glob("**/*.mp3").unwrap().collect();
     println!("search complete");
@@ -75,34 +83,48 @@ fn main() {
     let total = total;
     println!("{} files found", total);
 
-    let (tx2, rx2) = channel::<i32>();
     let mut md5_map = Md5Map::new();
     let mut index = 0;
-    let mut jobs = 0;
+    let mut trashed = 0;
+    let mut trash_polls = vec![];
+    let mut poll_tash = |trash_polls: Vec<(usize, PathBuf, Polling<_>)>| {
+        let mut new_trash_polls = vec![];
+        for (index, path, mut poll) in trash_polls {
+            block_on(poll.polling_once());
+            if poll.is_pending() {
+                new_trash_polls.push((index, path, poll));
+            } else {
+                etry!(block_on(poll); continue);
+                trashed += 1;
+                println!(
+                    "{} trash#{} -> {}",
+                    index.cyan(),
+                    trashed.cyan(),
+                    path.display().dimmed()
+                );
+            }
+        }
+        return new_trash_polls;
+    };
+
     println!("reading files");
     for entry in rx1.iter().take(total) {
         if let Some((md5, time, path)) = entry {
             index += 1;
             if let Some(path) = etry!(insert_md5(index, &mut md5_map, md5, time, path); continue) {
-                jobs += 1;
-                let tx2 = tx2.clone();
-                let index = jobs.clone();
-                pool.execute(move || {
-                    println!("trash#{} -> {}", index.cyan(), path.display().dimmed());
-                    etry!(trash::delete(path); {
-                        etry!(tx2.send(0));
-                        return;
-                    });
-                    etry!(tx2.send(1));
-                });
+                let poll = remove_file(path.clone()).polling();
+                trash_polls.push((index, path, poll));
             }
         }
+        if trash_polls.len() > 0 {
+            trash_polls = poll_tash(trash_polls);
+        }
+    }
+    while trash_polls.len() > 0 {
+        trash_polls = poll_tash(trash_polls);
     }
 
-    println!(
-        "moved {} files to the trash",
-        rx2.iter().take(jobs).fold(0, |a, b| a + b)
-    );
+    println!("deleted {} files", trashed);
 
     println!("done");
 }
@@ -151,7 +173,7 @@ fn insert_md5(
     if let Some((time2, path2)) = md5_map.get(&md5) {
         println!("{} match {:x}:", index.cyan(), md5.yellow());
         if time > *time2 {
-            println!("{} keep -> {}", index.cyan(), path.display().purple());
+            println!("{} insert -> {}", index.cyan(), path.display().purple());
             let path2 = path2.clone();
             md5_map.insert(md5, (time, path));
             Ok(Some(path2))
@@ -161,7 +183,7 @@ fn insert_md5(
         }
     } else {
         println!(
-            "{} {:x} {}",
+            "{} insert {:x}: {}",
             index.cyan(),
             md5.yellow(),
             path.display().dimmed()
