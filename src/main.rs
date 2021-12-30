@@ -252,6 +252,7 @@ fn main() {
             }
             etry!(block_on(tx.send(send_data)));
         }
+        polls = next_polls;
     }
     while trash_polls.len() > 0 {
         poll_tash(&mut trash_polls);
